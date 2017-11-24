@@ -58,7 +58,7 @@ struct ModeByte: OptionSet {
     static let startStop        = ModeByte(rawValue: 1 << 2)
     static let pauseResume      = ModeByte(rawValue: 1 << 3)
     static let later1           = ModeByte(rawValue: 1 << 4)
-    static let later2           = ModeByte(rawValue: 1 << 5)
+    static let mode_5           = ModeByte(rawValue: 1 << 5)
     static let modeFuncLo       = ModeByte(rawValue: 1 << 6)
     static let modeFuncHi       = ModeByte(rawValue: 1 << 7)
     
@@ -81,13 +81,13 @@ struct Rcam {
     
     static let UUID_Battery =           "2F016955-E675-49A6-9176-111E2A1CF338"
     static var batteryLevel: UInt16 =   0
-    static let UUID_Position =          "2F016955-E675-49A6-9176-111E2A1CF339"
-    static var currentPosition: Int16 = 0
+//    static let UUID_Position =          "2F016955-E675-49A6-9176-111E2A1CF339"
+//    static var currentPosition: Int16 = 0
     
     static let UUID_Mode =              "2F016955-E675-49A6-9176-111E2A1CF32E"
     static var mode: UInt16 =           0
-    static let UUID_Dir =               "2F016955-E675-49A6-9176-111E2A1CF32F"
-    static var direction: UInt16 =      0 // either 0 left or 1 = right
+//    static let UUID_Dir =               "2F016955-E675-49A6-9176-111E2A1CF32F"
+//    static var direction: UInt16 =      0 // either 0 left or 1 = right
     
     static let UUID_Speed =             "2F016955-E675-49A6-9176-111E2A1CF330"
     static var speed: UInt16 =          10       // default speed
@@ -183,9 +183,9 @@ struct Rcam {
     static let intervalTimeMax = 10000
     
     static let UUID_intervalHI =    "2F016955-E675-49A6-9176-111E2A1CFDA3"
-    static var delayTime: UInt16 = 10
-    static let delayTimeMin = 1
-    static let delayTimeMax = 30000
+    static var intervalHI: UInt16 = 10
+//    static let delayTimeMin = 1
+//    static let delayTimeMax = 30000
     
     static let UUID_triggerDelay =  "2F016955-E675-49A6-9176-111E2A1CFB31"
     static var triggerDelay: UInt16 = 0

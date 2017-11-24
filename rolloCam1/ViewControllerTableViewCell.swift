@@ -32,7 +32,7 @@ class ViewControllerTableViewCell: UITableViewCell {
     @IBOutlet weak var slida1: UISlider!
     
     @IBAction func slida1(_ sender: UISlider) {
-        print("tag: \(slida1.tag), function: \(ViewController.functionMode)")
+        //print("tag: \(slida1.tag), function: \(ViewController.functionMode)")
         if self.isSelected == true {
             self.isSelected = false
         }

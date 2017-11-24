@@ -1,3 +1,10 @@
+// 11/21 - working the functions for the arros for real time.
+
+//  ISSUE:   Need to reset Mode when off the sliders
+
+
+
+// 11/21 - removed decel, updated the rowheights for the tables for each mode
 // 11/20 - added code in start button to turn on and off activity indicator
 // 11/20 - added left and right arrows in direction View in order 
 //  to control realtime left and right movements with speed
@@ -24,6 +31,8 @@ import CoreData
 
 class ViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, CBCentralManagerDelegate, CBPeripheralDelegate {
 
+    var scanTimer = Timer()
+    var scanning = true
     let centralRestoreIdentifier =    "com.cobracrane.rolloCam1.CentralManager"
     let peripheralRestoreIdentifier = "com.cobracrane.rolloCam1.PeripheralManager"
     var theModeByte = 0b00000010
@@ -55,34 +64,53 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
                     sectionIsHidden: false)
         ]
         activityEnd()
+        scanTimer = Timer.scheduledTimer(timeInterval: 5, target: self, selector: #selector(self.checkOnScanProgress), userInfo: nil, repeats: true)
     }
-    var RcamCharNames  = [Rcam.UUID_Mode: "Mode",
-                          Rcam.UUID_Dir: "direction",
+    
+    func checkOnScanProgress(){
+        // every 5 seconds we check for 5 seconds
+        if peripheral == nil {   // if we have not yet connected
+            if scanning == true{
+                print(" NOT SCANNING . . .  ")
+                stopScanning()
+               
+            } else {
+                print(" SCANNING . . . ")
+                startScanning()
+             
+            }
+        }
+    }
+    
+    var RcamCharNames  = [Rcam.UUID_Battery: "Battery",
+                          Rcam.UUID_Mode: "Mode",
                           Rcam.UUID_Speed: "speed",
                           Rcam.UUID_RampTime: "Ramp Time",
                           Rcam.UUID_Distance: "distance",
                           Rcam.UUID_TraverseFlag: "cmTraverseFlag",
                           Rcam.UUID_TravDwellTime: "cmDwellTime",
                           Rcam.UUID_Index: "smIndex",
-                          Rcam.UUID_intervalLO: "intervalTime",
+                          Rcam.UUID_intervalLO: "intervalLo",
+                          Rcam.UUID_intervalHI: "intervalHi",
                           Rcam.UUID_triggerDelay: "triggerDelay"
     ]
-    var RcamChars       = [Rcam.UUID_Mode: Rcam.mode,
-                           Rcam.UUID_Dir: Rcam.direction,
+    var RcamChars       = [Rcam.UUID_Battery: Rcam.batteryLevel,
+                           Rcam.UUID_Mode: Rcam.mode,
                            Rcam.UUID_Speed: Rcam.speed,
                            Rcam.UUID_RampTime: Rcam.rampTime,
                            Rcam.UUID_Distance: Rcam.distance,
                            Rcam.UUID_TraverseFlag: Rcam.cmTraverseFlag,
                            Rcam.UUID_TravDwellTime: Rcam.cmDwellTime,
                            Rcam.UUID_Index: Rcam.smIndex,
-                           Rcam.UUID_intervalLO: Rcam.intervalTime,
+                           Rcam.UUID_intervalLO: Rcam.intervalTime % 256,
+                           Rcam.UUID_intervalHI: Rcam.intervalTime >> 8,
                            Rcam.UUID_triggerDelay: Rcam.triggerDelay
     ]
     
     @IBOutlet weak var yellowIndicator: UIImageView!
     static var newValues0 = [Rcam.speed, Rcam.rampTime,
                              Rcam.cmDistance, Rcam.cmDwellTime ]
-    static var newValues1 = [Rcam.tlIndex, Rcam.tlDistance,Rcam.intervalTime,
+    static var newValues1 = [Rcam.tlIndex, Rcam.tlDistance, Rcam.intervalTime,
                              Rcam.triggerDelay, Rcam.tlTravDwellTime]
     static var newValues2 = [Rcam.smIndex]
     
@@ -130,23 +158,24 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
         return modeName[ViewController.functionMode]
     }
     func tableView(_ tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
-        (view as! UITableViewHeaderFooterView).backgroundView?.backgroundColor = UIColor.init(red: 253, green: 161, blue: 39, alpha: 1)
-            
-        (view as! UITableViewHeaderFooterView).textLabel?.textColor = UIColor.black.withAlphaComponent(1)
         
+        let header = view as! UITableViewHeaderFooterView
+        if let textlabel = header.textLabel {
+            textlabel.font = textlabel.font.withSize(15)
+        }
+    
+        (view as! UITableViewHeaderFooterView).backgroundView?.backgroundColor = UIColor.orange.withAlphaComponent(0.7)
+        (view as! UITableViewHeaderFooterView).textLabel?.textColor = UIColor.black.withAlphaComponent(1)
+
         (view as! UITableViewHeaderFooterView).textLabel?.textAlignment = NSTextAlignment.center
     }
     
-
-    func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
-        return CGFloat(1)
-    }
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        return CGFloat(30)
+        return CGFloat(19)
     }
     
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        let tvHeight    = 345
+        let tvHeight    = 270
         var height      = 0
         var ss          = 1
         if switchStatus == true {
@@ -224,8 +253,37 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
         super.didReceiveMemoryWarning()
     }
     
+ // *************************************************************
+// real time slidas
     
-
+    @IBAction func leftSlida(_ sender: UISlider) {
+        let dirRIGHTMask    = 0b00000001
+        let modeFive        = 0b00100000
+        let spd: UInt16 = UInt16(abs(sender.value - 10))
+        theModeByte = theModeByte | dirRIGHTMask    // OR the mask to the byte
+        theModeByte = theModeByte | modeFive        // OR the 5 to the mode
+        RcamChars[Rcam.UUID_Mode] = UInt16(theModeByte) // update the ModeByte
+        RcamChars[Rcam.UUID_Speed]         = spd
+        updateCharacteristics()
+        theModeByte = theModeByte ^ modeFive        // XOR the 5 back off the mode
+        RcamChars[Rcam.UUID_Mode] = UInt16(theModeByte) // reset the ModeByte
+        print("left speed = \(spd)")
+    }
+    
+    @IBAction func rightSlida(_ sender: UISlider) {
+        let dirRIGHTMask    = 0b00000001
+        let modeFive        = 0b00100000
+        let spd: UInt16 = UInt16(sender.value)
+        theModeByte = theModeByte ^ dirRIGHTMask    // XOR the mask to the byte
+        theModeByte = theModeByte | modeFive        // XOR the 5 back off the mode
+        RcamChars[Rcam.UUID_Mode] = UInt16(theModeByte) // update the ModeByte
+        RcamChars[Rcam.UUID_Speed]         = spd
+        updateCharacteristics()
+        theModeByte = theModeByte ^ modeFive        // XOR the 5 back off the mode
+        RcamChars[Rcam.UUID_Mode] = UInt16(theModeByte) // reset the ModeByte
+        print("right speed = \(spd)")
+    }
+    
     
     
 // *************************************************************
@@ -297,16 +355,17 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
         let str = String(theModeByte, radix: 2)
         print("** ** Changed Function: \(String(describing: sender.titleForSegment(at: (ViewController.functionMode)))) modeByte to  \(str)")
         
+        RcamChars[Rcam.UUID_Mode] = UInt16(theModeByte) // update the ModeByte
+
     }
 // *************************************************************
 // gets the updated Direction
     @IBAction func directionSelector(_ sender: UISegmentedControl) {
         let dirRIGHTMask    = 0b00000001
-        Rcam.direction      = UInt16(sender.selectedSegmentIndex)
         let dirSound: SystemSoundID = 1306
         AudioServicesPlaySystemSound (dirSound)
         
-        if (Rcam.direction > 0 ){
+        if (sender.selectedSegmentIndex > 0 ){
             theModeByte  = theModeByte | dirRIGHTMask
         } else {
             theModeByte  = theModeByte ^ dirRIGHTMask
@@ -346,40 +405,34 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
         updateCharacteristics()
     }
 // *************************************************************
+// *************************************************************
     func updateCharacteristics(){
-        RcamChars[Rcam.UUID_Mode] = UInt16(theModeByte)
+        
         if peripheral?.services != nil {
             for service in (peripheral?.services)! {  // iterate through characteristics
                 if let characteristics = service.characteristics {
                     print("total characteristics: \(characteristics.count)")
                     for characteristic in characteristics {
-                        if String(describing: characteristic.uuid) == Rcam.UUID_Battery || String(describing: characteristic.uuid) == Rcam.UUID_Position {
+                        if String(describing: characteristic.uuid) == Rcam.UUID_Battery {
                             print("read only")
                         } else {
-                            let theUUIDPart = String(describing: characteristic.uuid)
-                            if  theUUIDPart == Rcam.UUID_intervalLO
-                            {
-                                if RcamChars[theUUIDPart] != nil {
-                                    let updatedInt = RcamChars[theUUIDPart] // 16 bit send
-                                    let newE = Data(from: updatedInt)
-                                    peripheral?.writeValue(newE, for: characteristic, type:
-                                        CBCharacteristicWriteType.withoutResponse)
-                                }
-                            } else {  // its 8 bit
-                                
-                                if RcamChars[theUUIDPart] != nil{ // 8 bit version
-                                    let updatedInt = UInt8(RcamChars[theUUIDPart]!)
-                                    let newE = Data(from: updatedInt)
-                                    peripheral?.writeValue(newE, for: characteristic, type:CBCharacteristicWriteType.withoutResponse)
-                                }
+                        let theUUIDPart = String(describing: characteristic.uuid)
+                            if RcamChars[theUUIDPart] != nil{ // 8 bit version
+                                let updatedInt = UInt8(RcamChars[theUUIDPart]!)
+                                let newE = Data(from: updatedInt)
+                                peripheral?.writeValue(newE, for: characteristic, type:CBCharacteristicWriteType.withoutResponse)
                             }
-                            print("writing \(String(describing: RcamChars[theUUIDPart]!)) to \(RcamCharNames[String(describing: characteristic.uuid)]!)")
+                        print("writing \(String(describing: RcamChars[theUUIDPart]!)) to \(RcamCharNames[String(describing: characteristic.uuid)]!)")
                         }
                     }
                 }
             }
         }
     }
+// *************************************************************
+// *************************************************************
+    
+    
 // *************************************************************
     //  *********   START BUTTON ACTIVITIES
     @IBOutlet weak var startButton1: UIButton!
@@ -446,7 +499,8 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
         case 1:
             RcamChars[Rcam.UUID_Index]         = Rcam.functionMode1ArrayValue[0]
             RcamChars[Rcam.UUID_Distance]      = Rcam.functionMode1ArrayValue[1]
-            RcamChars[Rcam.UUID_intervalLO]    = Rcam.functionMode1ArrayValue[2]
+            RcamChars[Rcam.UUID_intervalLO]    = Rcam.functionMode1ArrayValue[2] % 256
+            RcamChars[Rcam.UUID_intervalHI]    = Rcam.functionMode1ArrayValue[2] >> 8
             RcamChars[Rcam.UUID_triggerDelay]  = Rcam.functionMode1ArrayValue[3]
             RcamChars[Rcam.UUID_TravDwellTime] = Rcam.functionMode1ArrayValue[4]
             RcamChars[Rcam.UUID_TraverseFlag]  = UInt16(onOrOff)
@@ -492,6 +546,7 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
             disconnect()
         } else {
             startScanning()
+            
         }
     }
 
@@ -499,14 +554,20 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
 // MARK: Central management methods
     func stopScanning() {
         centralManager.stopScan()
+        scanning = false
+        
     }
+    
     func startScanning() {
         if centralManager.isScanning {
+            
             print("Central Manager is already scanning!!")
             return;
+            
         }
         centralManager.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey:true])
         print("Scanning Started! looking for \(Rcam.UUID_EE)")
+        scanning = true
 
     }
 
@@ -535,7 +596,7 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
             if let characteristics = service.characteristics {
                 for characteristic in characteristics {
                     // find the Transfer Characteristic we defined in our Rcam struct
-                    if characteristic.uuid == CBUUID.init(string: Rcam.UUID_Battery) || characteristic.uuid == CBUUID.init(string: Rcam.UUID_Position){
+                    if characteristic.uuid == CBUUID.init(string: Rcam.UUID_Battery){
                         // We can return after calling CBPeripheral.setNotifyValue because CBPeripheralDelegate's
                         // didUpdateNotificationStateForCharacteristic method will be called automatically
                         print("Setting Notify to off for \(String(describing: characteristic.uuid))")
@@ -559,8 +620,10 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
     
     // State Preservation and Restoration
     // This is the FIRST delegate method that will be called when being relaunched -- not centralManagerDidUpdateState
+    
+    
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String : Any]) {
-        
+
         //---------------------------------------------------------------------------
         // We don't need these, but it's good to know that they exist.
         //---------------------------------------------------------------------------
@@ -579,6 +642,10 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
         
         /*   Retrieve array of CBPeripheral objects containing all of the peripherals that were connected to the central manager
          (or that had a connection pending) at the time the app was terminated by the system.
+         
+         myCentralManager = [[CBCentralManager alloc] initWithDelegate:self queue:nil options:@{ CBCentralManagerOptionRestoreIdentifierKey: @"myCentralManagerIdentifier" }];
+         
+         
          
          When possible, all the information about a peripheral is restored, including any discovered services, characteristics,
          characteristic descriptors, and characteristic notification states.*/
@@ -627,8 +694,8 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
         if peripheral.name == "RolloCam"{
             print(peripheral.name ?? "Rcam Information  We have the right one")
         }
-        
         let serviceUUID = CBUUID(string: Rcam.UUID_TransferService)
+        scanTimer.invalidate() // we can now turn the timer off
         peripheral.discoverServices([serviceUUID])
         
     }
@@ -648,21 +715,22 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
      advertisementData - A dictionary containing any advertisement data.
      RSSI - The current received signal strength indicator (RSSI) of the peripheral, in decibels.*/
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
-        print("Discovered \(String(describing: peripheral.name)) at \(RSSI)")
+        if peripheral.name != nil{
+            print("Discovered \(String(describing: peripheral.name!)) at \(RSSI)")
+        }
         
         
         if peripheral.name == "RolloCam" { // check to see if it is the Rcam I want
-            print("We found the \(String(describing: peripheral.name))")
+
             indicatorOn(state: true)            // show the green led
             if self.peripheral != peripheral {  // did we saved reference to peripheral
                 self.peripheral = peripheral    // save a reference to the peripheral object
-                print("Connecting to peripheral: \(peripheral)")
+                
                 centralManager?.connect(peripheral, options: nil)// connect to the peripheral
+                print("Connecting to peripheral: \(String(describing: peripheral.name!))")
             }
-            
-
         } else {
-            print("not the one we want, so we are not connecting")
+            //print("not the one we want, so we are not connecting")
         }
     }
 
@@ -676,14 +744,13 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
      This method is invoked when a call to connectPeripheral:options: is successful.
      You typically implement this method to set the peripheral’s delegate and to discover its services.  */
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        print("* * * didConnect peripheral   !!!")
+        print("* * * didConnect peripheral: \(String(describing: peripheral.name!)): \(peripheral)")
+  
         centralManager.stopScan()  // print(".. Scanning Stopped!")
         
         // IMPORTANT: Remember delegate property, to receive discovery callbacks
         peripheral.delegate = self // print("....delegate = self")remember peripheral for later
-        
         // Now that we've successfully connected to the peripheral, let's discover the services.
-        print(".....peripheral: \(String(describing: peripheral.name)) connected \(peripheral)")
         peripheral.discoverServices([CBUUID.init(string: Rcam.UUID_TransferService)])
     }
     
@@ -698,9 +765,9 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
      Because connection attempts do not time out, a failed connection usually indicates a transient issue,
      in which case you may attempt to connect to the peripheral again.    */
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        print("Failed to connect to \(peripheral) (\(String(describing: error?.localizedDescription)))")
         self.disconnect()
         indicatorOn(state: false)            // show the red led
+        print("Failed to connect to \(peripheral) (\(String(describing: error?.localizedDescription)))")
     }
     
 // *************************************************************
@@ -713,7 +780,6 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
      Note that when a peripheral is disconnected, all of its services, characteristics, and characteristic descriptors are invalidated.
      */
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        
         print("Disconnected from Peripheral") // reference to nil .start scanning again...
         self.peripheral = nil
         indicatorOn(state: false)
@@ -764,9 +830,7 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
                 if (service.uuid == CBUUID(string: Rcam.UUID_TransferService)) {
 
                     var charUUID = [CBUUID.init(string: Rcam.UUID_Battery)]
-                    charUUID.append(CBUUID.init(string: Rcam.UUID_Position))
                     charUUID.append(CBUUID.init(string: Rcam.UUID_Mode))
-                    charUUID.append(CBUUID.init(string: Rcam.UUID_Dir))
                     charUUID.append(CBUUID.init(string: Rcam.UUID_Speed))
                     charUUID.append(CBUUID.init(string: Rcam.UUID_RampTime))
                     charUUID.append(CBUUID.init(string: Rcam.UUID_Distance))
@@ -774,6 +838,7 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
                     charUUID.append(CBUUID.init(string: Rcam.UUID_TravDwellTime))
                     charUUID.append(CBUUID.init(string: Rcam.UUID_Index))
                     charUUID.append(CBUUID.init(string: Rcam.UUID_intervalLO))
+                    charUUID.append(CBUUID.init(string: Rcam.UUID_intervalHI))
                     charUUID.append(CBUUID.init(string: Rcam.UUID_triggerDelay))
                     peripheral.discoverCharacteristics(charUUID, for: service)
                 }
@@ -791,28 +856,23 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
             print("Error discovering characteristics: \(String(describing: error?.localizedDescription))")
             return
         }
-        print("* * * didDiscoverCharacteristicsFor service...register reads")
+        print("* * * didDiscoverCharacteristics")
         if let characteristics = service.characteristics {
-            
             for characteristic in characteristics {
-              
+                let whichChar = String(describing: RcamCharNames[String(describing: characteristic.uuid)]!)
+                
                 if characteristic.uuid == CBUUID(string: Rcam.UUID_Battery) {
-                    print("Found \(String(describing: RcamCharNames[String(describing: characteristic.uuid)])) . . .  set notify to TRUE")
-                    peripheral.setNotifyValue(true, for: characteristic)// subscribe to changes
-                    
-                } else if characteristic.uuid == CBUUID(string: Rcam.UUID_Position) {
-                    print("Found  \(String(describing: RcamCharNames[String(describing: characteristic.uuid)])) . . .  set notify to TRUE")
+                    print("Found \(whichChar) . . .  set notify to TRUE")
                     peripheral.setNotifyValue(true, for: characteristic)// subscribe to changes
                     
                 } else if characteristic.uuid == CBUUID(string: Rcam.UUID_Mode) {
-                    print("Found \(String(describing: RcamCharNames[String(describing: characteristic.uuid)])) . . .  set notify to TRUE")
+                    print("Found \(whichChar) . . .  set notify to TRUE")
                     peripheral.setNotifyValue(true, for: characteristic)// subscribe to changes
                     
                     
                 } else {
                     
                     if((characteristic.properties.contains(CBCharacteristicProperties.write)) || (characteristic.properties.contains(CBCharacteristicProperties.writeWithoutResponse))) {
-                        print(characteristic.properties)
                         print("discovered! UUID: \(String(describing: RcamCharNames[String(describing:characteristic.uuid)]!))")
                     }
                 }
@@ -827,8 +887,10 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
      If successful, the error parameter is nil.
      If unsuccessful, the error parameter returns the cause of the failure. */
     @IBOutlet weak var modeLabel: UILabel!
+    
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         print("didUpdateValueForCharacteristic: \(Date())")
+        
         
         if error != nil {  // if there was an error then print it and bail out
             print("Error updating value for characteristic: \(characteristic) - \(String(describing: error?.localizedDescription))")
@@ -865,10 +927,7 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
                 let batteryLevel = nsdataStr.to(type: UInt16.self)
                 batLabel.text = String(batteryLevel)
                 print("updating Battery: \(batteryLevel) ...  Bytes transferred: \(value.count)")
-            case Rcam.UUID_Position:
-                let currentPosition = nsdataStr.to(type: Int16.self)
-                posLabel.text = String(currentPosition)
-                print("updating Position: \(currentPosition) ...  Bytes transferred: \(value.count)")
+        
             default:
                 break
             }
@@ -884,10 +943,13 @@ class ViewController: UIViewController, UITableViewDataSource, UITableViewDelega
             print("Error changing notification state: \(String(describing: error?.localizedDescription))")
             return
         }
-        if characteristic.isNotifying {
-            print("Notification STARTED on: \(String(describing: RcamCharNames[String(describing: characteristic.uuid)]))")
-        } else {
-            print("Notification STOPPED on: \(String(describing: RcamCharNames[String(describing: characteristic.uuid)]))")
+        
+        if let whichChar = RcamCharNames[String(describing: characteristic.uuid)]{
+            if characteristic.isNotifying {
+                print("Notification STARTED on: \(whichChar)")
+            } else {
+                print("Notification STOPPED on: \(whichChar)")
+            }
         }
     }
 
